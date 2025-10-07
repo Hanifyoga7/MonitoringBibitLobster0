@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Monitoring Kualitas Air - Bibit Lobster Air Tawar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .status-good { color: #10b981; }
+        .status-warning { color: #f59e0b; }
+        .status-critical { color: #ef4444; }
+        .sensor-card {
+            transition: all 0.3s ease;
+            transform: translateY(0);
+        }
+        .sensor-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .data-stream {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff41;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .water-level-indicator {
+            position: relative;
+            height: 200px;
+            width: 60px;
+            background: linear-gradient(to bottom, #e5e7eb 0%, #9ca3af 100%);
+            border-radius: 30px;
+            overflow: hidden;
+            border: 3px solid #374151;
+        }
+        .water-level-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: linear-gradient(to top, #06b6d4 0%, #0891b2 50%, #0e7490 100%);
+            transition: height 0.5s ease;
+            border-radius: 0 0 27px 27px;
+        }
+        .water-level-waves {
+            position: absolute;
+            top: -10px;
+            left: 0;
+            width: 100%;
+            height: 20px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20'%3E%3Cpath d='M0,10 Q25,0 50,10 T100,10 V20 H0 Z' fill='%23ffffff' fill-opacity='0.3'/%3E%3C/svg%3E");
+            animation: wave 2s ease-in-out infinite;
+        }
+        @keyframes wave {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-25%); }
+        }
+        .level-markers {
+            position: absolute;
+            right: -30px;
+            top: 0;
+            height: 100%;
+            width: 20px;
+        }
+        .level-marker {
+            position: absolute;
+            right: 0;
+            width: 15px;
+            height: 2px;
+            background: #6b7280;
+        }
+        .level-marker.critical { background: #ef4444; }
+        .level-marker.warning { background: #f59e0b; }
+        .level-marker.optimal { background: #10b981; }
+        .drainage-alert {
+            background: linear-gradient(45deg, #ff6b6b, #ffa500);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            animation: alertBlink 1s ease-in-out infinite alternate;
+        }
+        @keyframes alertBlink {
+            0% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="min-h-screen gradient-bg">
+    <!-- Header -->
+    <header class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+        
+        <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-tint text-white text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Monitoring</h1>
+                <p class="text-sm text-gray-600 hidden sm:block">Sistem Monitoring Kualitas Air Lobster Air Tawar</p>
+            </div>
+        </div>
+        
+        <div class="flex flex-col items-start md:flex-row md:items-center md:space-x-4 space-y-2 md:space-y-0">
+            <div class="pulse-animation">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                    <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                    Online
+                </span>
+            </div>
+            <span class="text-sm text-gray-600" id="currentDateTime"></span>
+        </div>
+                
+            </div>
+        </div>
+    </header>
+    
+    <!-- Alert Section -->
+    <div id="alertBox" class="hidden container mx-auto px-6 mt-4">
+        <div class="drainage-alert flex items-center space-x-2">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span id="alertMessage">Sensor dalam kondisi tidak optimal!</span>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <main class="container mx-auto px-6 py-8">
+         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8"></div>
+        <!-- Alert Banner -->
+        <div id="alertBanner" class="mb-6 p-4 rounded-lg border-l-4 hidden">
+            <div class="flex items-center">
+                <i class="fas fa-exclamation-triangle mr-3"></i>
+                <div>
+                    <h4 class="font-semibold" id="alertTitle">Peringatan Sistem</h4>
+                    <p class="text-sm" id="alertMessage">Parameter air diluar batas optimal</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Water Level Alert -->
+        <div id="waterLevelAlert" class="mb-6 drainage-alert hidden">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="fas fa-water mr-3 text-xl"></i>
+                    <div>
+                        <h4 class="font-semibold" id="waterLevelAlertTitle">Status Level Air</h4>
+                        <p class="text-sm" id="waterLevelAlertMessage">Level air berubah drastis</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs opacity-75">Deteksi Otomatis</span><br>
+                    <span class="font-bold" id="waterLevelAlertTime">--:--:--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Overview -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+            <div class="lg:col-span-1">
+                <div class="card-glass rounded-xl p-6 shadow-lg">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Status Sistem</h3>
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Status Kolam</span>
+                            <span class="status-good font-semibold" id="poolStatus">Optimal</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Jumlah Sensor</span>
+                            <span class="font-semibold">4 Aktif</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Data Rate</span>
+                            <span class="font-semibold">1 detik</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Uptime</span>
+                            <span class="font-semibold" id="systemUptime">Memuat...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="w-full">
+            <div class="card-glass rounded-xl p-4 shadow-lg h-full flex flex-col items-center justify-center aspect-square">
+                <img src="kibo.jpeg" alt="Monitoring Lobster Air Tawar" 
+                    class="w-32 md:w-48 aspect-square object-cover rounded-lg mb-4"/>
+                <div class="text-center">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Lobster Air Tawar</h3>
+                    <p class="text-gray-600 text-sm">Monitoring parameter kualitas air secara real-time.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sensor Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <!-- pH Sensor -->
+            <div class="sensor-card card-glass rounded-xl p-6 shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                            <i class="fas fa-flask text-blue-600"></i>
+                        </div>
+                        <h3 class="font-semibold text-gray-800">pH Air</h3>
+                    </div>
+                    <span class="status-good" id="phStatus"><i class="fas fa-check-circle"></i></span>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 mb-2" id="phValue">7.2</div>
+                <div class="text-sm text-gray-600 mb-3">
+                    Optimal: 6.5 - 8.5<br>
+                    <span class="text-green-600 font-medium">Ideal: 7.0 - 8.0</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="bg-blue-600 h-2 rounded-full" style="width: 72%" id="phBar"></div>
+                </div>
+            </div>
+
+            <!-- Temperature Sensor DS18B20 -->
+            <div class="sensor-card card-glass rounded-xl p-6 shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-3">
+                            <i class="fas fa-thermometer-half text-red-600"></i>
+                        </div>
+                        <h3 class="font-semibold text-gray-800">Suhu (DS18B20)</h3>
+                    </div>
+                    <span class="status-good" id="tempStatus"><i class="fas fa-check-circle"></i></span>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 mb-2" id="tempValue">25.4°C</div>
+                <div class="text-sm text-gray-600 mb-3">
+                    Optimal: 20°C - 28°C<br>
+                    <span class="text-green-600 font-medium">Ideal: 24°C - 26°C</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="bg-red-600 h-2 rounded-full" style="width: 75%" id="tempBar"></div>
+                </div>
+            </div>
+
+            <!-- Turbidity Sensor -->
+            <div class="sensor-card card-glass rounded-xl p-6 shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center mr-3">
+                            <i class="fas fa-eye text-yellow-600"></i>
+                        </div>
+                        <h3 class="font-semibold text-gray-800">Kekeruhan</h3>
+                    </div>
+                    <span class="status-good" id="turbidityStatus"><i class="fas fa-check-circle"></i></span>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 mb-2" id="turbidityValue">3.2 NTU</div>
+                <div class="text-sm text-gray-600 mb-3">
+                    Optimal: < 10 NTU<br>
+                    <span class="text-green-600 font-medium">Ideal: < 5 NTU</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="bg-yellow-600 h-2 rounded-full" style="width: 32%" id="turbidityBar"></div>
+                </div>
+            </div>
+
+            <!-- Water Level Sensor -->
+            <div class="sensor-card card-glass rounded-xl p-6 shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center mr-3">
+                            <i class="fas fa-water text-cyan-600"></i>
+                        </div>
+                        <h3 class="font-semibold text-gray-800">Level Air</h3>
+                    </div>
+                    <span class="status-good" id="waterLevelStatus"><i class="fas fa-check-circle"></i></span>
+                </div>
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="text-2xl font-bold text-gray-900 mb-1" id="waterLevelValue">78%</div>
+                        <div class="text-sm text-gray-600">
+                            <span id="waterLevelCm">156 cm</span><br>
+                            <span class="text-green-600 font-medium">Ideal: 60-90%</span>
+                        </div>
+                    </div>
+                    <div class="water-level-indicator ml-4">
+                        <div class="water-level-fill" id="waterLevelFill" style="height: 78%">
+                            <div class="water-level-waves"></div>
+                        </div>
+                        <div class="level-markers">
+                            <div class="level-marker critical" style="top: 10px;"></div>
+                            <div class="level-marker warning" style="top: 30px;"></div>
+                            <div class="level-marker optimal" style="top: 60px;"></div>
+                            <div class="level-marker optimal" style="bottom: 40px;"></div>
+                            <div class="level-marker warning" style="bottom: 20px;"></div>
+                            <div class="level-marker critical" style="bottom: 5px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-500">
+                    <div class="flex justify-between mb-1">
+                        <span>Min: 30%</span>
+                        <span>Max: 95%</span>
+                    </div>
+                    <div class="text-center">
+                        <span id="waterLevelTrend" class="inline-flex items-center">
+                            <i class="fas fa-arrow-right mr-1"></i>Stabil
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Water Management Panel -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Water Level History -->
+            <div class="card-glass rounded-xl p-6 shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Riwayat Level Air</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fas fa-arrow-up text-blue-600 mr-2"></i>
+                            <span class="text-sm font-medium">Pengisian Terakhir</span>
+                        </div>
+                        <div class="text-right text-sm">
+                            <div class="font-semibold">95% → 78%</div>
+                            <div class="text-gray-600" id="lastFillTime">2 jam lalu</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fas fa-arrow-down text-orange-600 mr-2"></i>
+                            <span class="text-sm font-medium">Pengurasan Terakhir</span>
+                        </div>
+                        <div class="text-right text-sm">
+                            <div class="font-semibold">85% → 35%</div>
+                            <div class="text-gray-600" id="lastDrainTime">1 hari lalu</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fas fa-clock text-green-600 mr-2"></i>
+                            <span class="text-sm font-medium">Durasi Stabil</span>
+                        </div>
+                        <div class="text-right text-sm">
+                            <div class="font-semibold" id="stableDuration">4.5 jam</div>
+                            <div class="text-gray-600">Level 75-80%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Water Change Schedule -->
+            <div class="card-glass rounded-xl p-6 shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Jadwal Penggantian Air</h3>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Penggantian Terakhir</span>
+                        <span class="font-semibold text-sm" id="lastWaterChange">1 hari lalu</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Interval Rekomendasi</span>
+                        <span class="font-semibold text-sm">7 hari</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Penggantian Berikutnya</span>
+                        <span class="font-semibold text-sm text-orange-600" id="nextWaterChange">6 hari lagi</span>
+                    </div>
+                    <div class="pt-4 border-t">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium">Progress Interval</span>
+                            <span class="text-sm" id="changeProgress">14%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-blue-600 h-2 rounded-full" style="width: 14%" id="changeProgressBar"></div>
+                        </div>
+                    </div>
+                    <button id="openScheduleModalBtn" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">
+                        <i class="fas fa-sync-alt mr-2"></i>Jadwalkan Penggantian
+                    </button>
+                </div>
+            </div>
+
+            <!-- Auto Control Panel -->
+            <div class="card-glass rounded-xl p-6 shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Kontrol Otomatis</h3>
+                <div class="space-y-4">
+                    <div class="mb-4 p-3 rounded-lg flex items-center justify-between bg-blue-50 border-l-4 border-blue-500" id="automationStatusBox">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center mr-3 bg-blue-100" id="automationStatusIcon">
+                                <i class="fas fa-robot text-blue-600"></i>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-800">Status Sistem</span>
+                                <p class="text-sm" id="automationStatusText">Sistem berjalan otomatis</p>
+                            </div>
+                        </div>
+                        <span class="text-xs font-mono tracking-widest" id="automationStatusLabel">OTOMATIS</span>
+                    </div>
+
+                    <div class="space-y-2 pt-2">
+                        <button class="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm" id="manualFillBtn">
+                            <i class="fas fa-plus mr-2"></i>Isi Air Manual
+                        </button>
+                        <button class="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm" id="manualDrainBtn">
+                            <i class="fas fa-minus mr-2"></i>Kuras Air Manual
+                        </button>
+                         <button class="w-full px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm" id="manualStopBtn">
+                            <i class="fas fa-stop-circle mr-2"></i>Kembali ke Otomatis
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts and Data Stream -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Real-time Chart -->
+            <div class="card-glass rounded-xl p-6 shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Grafik Real-time (Suhu, ph, kekeruhan)</h3>
+                <canvas id="realtimeChart" height="300"></canvas>
+            </div>
+
+            <!-- Water Level Chart -->
+            <div class="card-glass rounded-xl p-6 shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Level Air (24 Jam)</h3>
+                <canvas id="waterLevelChart" height="300"></canvas>
+            </div>
+        </div>
+
+        <div id="scheduleModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-gray-800">Atur Jadwal Penggantian</h3>
+                <button id="closeModalBtn" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            
+            <div>
+                <label for="scheduleInputDays" class="block text-sm font-medium text-gray-700 mb-2">
+                    Ganti air setiap (interval dalam hari):
+                </label>
+                <input type="number" id="scheduleInputDays" value="14" 
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Nilai saat ini di alat adalah 14 hari.</p>
+            </div>
+            
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancelModalBtn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                    Batal
+                </button>
+                <button id="saveScheduleBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    Simpan Jadwal
+                </button>
+            </div>
+        </div>
+    </div>
+
+        </div>
+    </main>
+
+    <!-- Script Tambahan -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script type="module">
+
+   
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+    // TODO: Add SDKs for Firebase products that you want to use
+    // https://firebase.google.com/docs/web/setup#available-libraries
+
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+        apiKey: "AIzaSyDCS1mifg9OrLlvRpTLSv7ifHgEmQL8OBU",
+        authDomain: "monitoring-lobster-9afbf.firebaseapp.com",
+        databaseURL: "https://monitoring-lobster-9afbf-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "monitoring-lobster-9afbf",
+        storageBucket: "monitoring-lobster-9afbf.firebasestorage.app",
+        messagingSenderId: "1038833094277",
+        appId: "1:1038833094277:web:01684e0ee0917cb966a3ec"
+    };
+
+    // Inisialisasi Firebase
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    setupManualControls(); 
+
+
+    // === Inisialisasi Chart.js ===
+    const ctxRealtime = document.getElementById("realtimeChart").getContext("2d");
+    const realtimeChart = new Chart(ctxRealtime, {
+        type: "line",
+        data: {
+            labels: [],
+            datasets: [
+                { label: "Suhu (°C)", data: [], borderColor: "rgba(239, 68, 68, 1)", backgroundColor: "rgba(239, 68, 68, 0.1)", fill: true, tension: 0.4 },
+                { label: "pH", data: [], borderColor: "rgba(59, 130, 246, 1)", backgroundColor: "rgba(59, 130, 246, 0.1)", fill: true, tension: 0.4 },
+                { label: "Kekeruhan (NTU)", data: [], borderColor: "rgba(245, 158, 11, 1)", backgroundColor: "rgba(245, 158, 11, 0.1)", fill: true, tension: 0.4 }
+            ]
+        },
+        options: { responsive: true, animation: { duration: 500 }, scales: { y: { beginAtZero: false } } }
+    });
+
+    const ctxLevel = document.getElementById("waterLevelChart").getContext("2d");
+    const waterLevelChart = new Chart(ctxLevel, {
+        type: "line",
+        data: {
+            labels: [],
+            datasets: [
+                { label: "Level Air (%)", data: [], borderColor: "rgba(20, 184, 166, 1)", backgroundColor: "rgba(20, 184, 166, 0.1)", fill: true, tension: 0.4 }
+            ]
+        },
+        options: { responsive: true, animation: { duration: 500 }, scales: { y: { min: 0, max: 100 } } }
+    });
+
+
+    // === FUNGSI UTAMA: MENDENGARKAN DAN UPDATE DATA DARI FIREBASE ===
+    const dbRef = database.ref('/');
+    dbRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        console.log("Data real-time diterima:", data);
+
+        if (data && data.sensor) {
+            // Konversi voltase level air ke persentase (asumsi 1.0V = 0%, 2.5V = 100%)
+            const minVolt = 1.0;
+            const maxVolt = 2.5;
+            let levelPersen = ((data.sensor.level_volt - minVolt) / (maxVolt - minVolt)) * 100;
+            levelPersen = Math.max(0, Math.min(100, levelPersen)); // Pastikan nilai antara 0-100
+
+            const liveData = {
+                suhu: data.sensor.suhu,
+                ph: data.sensor.ph,
+                kekeruhan: data.sensor.kekeruhan,
+                level: levelPersen
+            };
+
+            updateDashboard(liveData);
+        }
+        if (data && data.status && data.status.kuras_terakhir) {
+        updateSchedulePanel(data.status.kuras_terakhir);
+        }
+         if (data.status.status_kolam) {
+            const poolStatusEl = document.getElementById("poolStatus");
+            poolStatusEl.innerText = data.status.status_kolam;
+            // Ubah warna status
+            poolStatusEl.className = data.status.status_kolam === "Optimal" ? "status-good font-semibold" : "status-warning font-semibold";
+        }
+        if (data.status.uptime_detik) {
+            document.getElementById("systemUptime").innerText = formatUptime(data.status.uptime_detik);
+        }
+    });
+
+         // === JAVASCRIPT UNTUK MODAL JADWAL (Tambahkan di bawah) ===
+        // =======================================================
+
+        // Ambil semua elemen yang dibutuhkan
+        const openModalBtn = document.getElementById('openScheduleModalBtn');
+        const scheduleModal = document.getElementById('scheduleModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const cancelModalBtn = document.getElementById('cancelModalBtn');
+        const saveScheduleBtn = document.getElementById('saveScheduleBtn');
+        const scheduleInput = document.getElementById('scheduleInputDays');
+
+        // Fungsi untuk membuka modal
+        openModalBtn.addEventListener('click', () => {
+            scheduleModal.classList.remove('hidden');
+        });
+
+        // Fungsi untuk menutup modal
+        const closeModal = () => {
+            scheduleModal.classList.add('hidden');
+        };
+
+        closeModalBtn.addEventListener('click', closeModal);
+        cancelModalBtn.addEventListener('click', closeModal);
+        saveScheduleBtn.addEventListener('click', () => {
+    const newInterval = scheduleInput.value;
+    if (newInterval && newInterval > 0) {
+        // Baris ini mengirim nilai baru ke Firebase
+        database.ref('/kontrol/jadwal_interval_hari').set(parseInt(newInterval));
+
+        // Beri konfirmasi ke pengguna
+        alert(`Jadwal baru ${newInterval} hari telah dikirim ke alat!`);
+        
+        closeModal(); // Tutup modal setelah disimpan
+    } else {
+        alert("Mohon masukkan angka yang valid (lebih dari 0).");
+    }
+});
+
+
+    // === FUNGSI-FUNGSI PEMBANTU ===
+
+    function updateDashboard(data) {
+        const now = new Date().toLocaleTimeString("id-ID", { hour12: false });
+        
+        // 1. Update Teks dan Bar di Kartu Sensor
+        document.getElementById("phValue").innerText = data.ph.toFixed(1);
+        document.getElementById("phBar").style.width = (data.ph / 14 * 100) + "%";
+
+        document.getElementById("tempValue").innerText = data.suhu.toFixed(1) + "°C";
+        document.getElementById("tempBar").style.width = (data.suhu / 40 * 100) + "%";
+        
+        document.getElementById("turbidityValue").innerText = data.kekeruhan.toFixed(1) + " NTU";
+        document.getElementById("turbidityBar").style.width = (data.kekeruhan / 100) + "%";
+
+        document.getElementById("waterLevelValue").innerText = data.level.toFixed(0) + "%";
+        document.getElementById("waterLevelFill").style.height = data.level.toFixed(0) + "%";
+
+        // 2. Update Grafik
+        // Hapus data lama jika sudah terlalu banyak (misal > 10 data)
+        if (realtimeChart.data.labels.length > 10) {
+            realtimeChart.data.labels.shift();
+            realtimeChart.data.datasets.forEach(dataset => dataset.data.shift());
+            waterLevelChart.data.labels.shift();
+            waterLevelChart.data.datasets[0].data.shift();
+        }
+
+        // Tambah data baru ke grafik
+        realtimeChart.data.labels.push(now);
+        realtimeChart.data.datasets[0].data.push(data.suhu);
+        realtimeChart.data.datasets[1].data.push(data.ph);
+        realtimeChart.data.datasets[2].data.push(data.kekeruhan);
+        
+        waterLevelChart.data.labels.push(now);
+        waterLevelChart.data.datasets[0].data.push(data.level);
+
+        // Perbarui tampilan grafik
+        realtimeChart.update();
+        waterLevelChart.update();
+
+        // 3. Update Peringatan/Alert
+        let alerts = [];
+        if (data.suhu < 26 || data.suhu > 30) alerts.push(`Suhu Kritis: ${data.suhu.toFixed(1)}°C`);
+        if (data.ph < 6.5 || data.ph > 8.5) alerts.push(`pH Kritis: ${data.ph.toFixed(1)}`);
+        if (data.kekeruhan > 25) alerts.push(`Air Keruh: ${data.kekeruhan.toFixed(1)} NTU`);
+        if (data.level < 40 || data.level > 95) alerts.push(`Level Air Kritis: ${data.level.toFixed(0)}%`);
+
+        const alertBox = document.getElementById("alertBox");
+        const alertMessage = document.getElementById("alertMessage");
+
+        if (alerts.length > 0) {
+            alertBox.classList.remove("hidden");
+            alertMessage.innerHTML = alerts.join(" &nbsp; | &nbsp; ");
+        } else {
+            alertBox.classList.add("hidden");
+        }
+    }
+
+    // Fungsi untuk menampilkan jam di header
+    function updateDateTime() {
+        const now = new Date();
+        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+        document.getElementById("currentDateTime").textContent = now.toLocaleDateString("id-ID", options);
+    }
+    setInterval(updateDateTime, 1000);
+    updateDateTime();
+
+    // FUNGSI BARU UNTUK UPDATE PANEL JADWAL
+    function updateSchedulePanel(isoTimestamp) {
+        if (!isoTimestamp) return; // Jangan lakukan apa-apa jika data tidak ada
+
+        const lastDrainDate = new Date(isoTimestamp);
+        
+        // Hitung jadwal berikutnya (14 hari setelah kuras terakhir)
+        const nextDrainDate = new Date(lastDrainDate);
+        nextDrainDate.setDate(lastDrainDate.getDate() + 14);
+
+        const now = new Date();
+        const timeDiff = nextDrainDate.getTime() - now.getTime();
+        const daysRemaining = Math.max(0, Math.ceil(timeDiff / (1000 * 3600 * 24)));
+
+        const daysSinceDrain = Math.floor((now.getTime() - lastDrainDate.getTime()) / (1000 * 3600 * 24));
+        
+        // Hitung progress bar
+        const progress = Math.min(100, Math.max(0, (daysSinceDrain / 14) * 100));
+
+        // Update elemen HTML
+        document.getElementById("lastWaterChange").innerText = `${daysSinceDrain} hari lalu`;
+        document.getElementById("nextWaterChange").innerText = `${daysRemaining} hari lagi`;
+        document.getElementById("changeProgress").innerText = `${progress.toFixed(0)}%`;
+        document.getElementById("changeProgressBar").style.width = `${progress.toFixed(0)}%`;
+    }
+
+    // FUNGSI BARU UNTUK MENGAKTIFKAN TOMBOL KONTROL
+    function setupManualControls() {
+    const commandRef = database.ref('/kontrol/perintah');
+
+    const manualFillBtn = document.getElementById('manualFillBtn');
+    const manualDrainBtn = document.getElementById('manualDrainBtn');
+    const manualStopBtn = document.getElementById('manualStopBtn'); // Tombol baru
+
+    manualFillBtn.addEventListener('click', () => {
+        console.log("Tombol Isi Manual Ditekan");
+        commandRef.set('isi_manual');
+        // setTimeout DIHAPUS
+    });
+
+    manualDrainBtn.addEventListener('click', () => {
+        console.log("Tombol Kuras Manual Ditekan");
+        commandRef.set('kuras_manual');
+        // setTimeout DIHAPUS
+    });
+
+    // Event listener untuk tombol Stop
+    manualStopBtn.addEventListener('click', () => {
+        console.log("Tombol Stop Ditekan");
+        commandRef.set('idle'); // Kirim perintah 'idle' untuk kembali ke otomatis
+    });
+
+        
+    }
+
+    function formatUptime(totalSeconds) {
+        const days = Math.floor(totalSeconds / 86400);
+        totalSeconds %= 86400;
+        const hours = Math.floor(totalSeconds / 3600);
+        totalSeconds %= 3600;
+        const minutes = Math.floor(totalSeconds / 60);
+
+        let uptimeString = "";
+        if (days > 0) uptimeString += `${days}h `;
+        if (hours > 0) uptimeString += `${hours}j `;
+        uptimeString += `${minutes}m`;
+        return uptimeString;
+}
+
+</script>
+</body>
+</html> 
